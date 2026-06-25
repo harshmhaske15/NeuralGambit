@@ -1,58 +1,4 @@
-// solver.cpp
-//
-// Implementation of MateSolver: alpha-beta pruned minimax search
-// specialized for the "forced mate in N" puzzle objective.
-//
-// ---------------------------------------------------------------------------
-// Algorithm overview
-// ---------------------------------------------------------------------------
-// We treat the search tree as alternating OR/AND layers:
-//
-//   * Attacker's turn (the side that must deliver mate): this is an OR
-//     node - the attacker wins at this node if AT LEAST ONE legal move
-//     leads to a forced win in the remaining ply budget. We try moves that
-//     give check first (and, for the very last attacking ply, ONLY moves
-//     that deliver checkmate are useful), which both speeds up the search
-//     and matches how forced mates are constructed in practice.
-//
-//   * Defender's turn (the side being mated): this is an AND node - the
-//     attacker's plan only "counts" as forced if EVERY legal defensive
-//     reply still leads to a forced mate for the attacker in the remaining
-//     budget. If the defender has any move that escapes mate (including
-//     simply not getting mated within budget), the attacker's try fails at
-//     this node.
-//
-// We implement this with classic alpha-beta on a {LOSS=0, WIN=1} scalar
-// space (we don't need a continuous evaluation - mate search is a boolean
-// decision problem at each ply count), which lets us prune heavily:
-//   - At an OR (attacker) node, once we find a winning move we can stop
-//     immediately (alpha cutoff - no need to consider further siblings).
-//   - At an AND (defender) node, once we find a single move that refutes
-//     the mate (i.e. attacker does NOT force mate after it), we can stop
-//     immediately (beta cutoff).
-//
-// Terminal conditions:
-//   - If it's the defender's turn and they have no legal moves:
-//       - If they are in check -> checkmate -> attacker already won
-//         (this terminal state is reached with 0 plies consumed on this
-//         "turn"; it ends the search successfully).
-//       - If they are NOT in check -> stalemate -> this is a DRAW, which is
-//         a failure for the attacker (must not be reported as a solution).
-//   - If it's the attacker's turn and they have no legal moves: this can
-//     only happen if the attacker is somehow stalemated/mated, which is a
-//     failure (should not occur in well-formed puzzles, but we handle it
-//     defensively).
-//   - If plies run out before mate is delivered: failure (no forced mate
-//     within budget).
-//
-// We also bail out early at the attacker's last allowed ply: any attacking
-// move that does not deliver an immediate checkmate cannot be part of a
-// "mate in exactly N" solution, so we only try moves that check or mate at
-// that final depth.
-// ---------------------------------------------------------------------------
-
 #include "solver.hpp"
-
 #include <algorithm>
 
 namespace puzzle {
@@ -101,17 +47,7 @@ void orderMoves(Board& board, Movelist& moves) {
     for (std::size_t i = 0; i < scored.size(); ++i) moves[static_cast<int>(i)] = scored[i].second;
 }
 
-}  // namespace
-
-// searchMate: returns true iff the attacker can force checkmate using
-// exactly `plies` half-moves from this position onward (i.e. mate must land
-// exactly when the budget is exhausted - this matches the standard puzzle
-// convention "mate in N", where N is the minimum number of attacker moves
-// needed). `attacker_to_move` tells us whose perspective we're evaluating
-// (true = the side on move is the side that must deliver mate at the end of
-// the line). Each call to searchMate consumes exactly one ply of `plies`
-// for the move it makes before recursing; `plies` here is "half-moves
-// remaining INCLUDING the one about to be made at this node".
+}
 bool MateSolver::searchMate(Board& board, int plies, bool attacker_to_move,
                              std::vector<Move>* out_line) {
     ++stats_.nodes;
@@ -125,9 +61,6 @@ bool MateSolver::searchMate(Board& board, int plies, bool attacker_to_move,
     if (attacker_to_move) {
         // --- OR node: attacker to move -----------------------------------
         if (moves.empty()) {
-            // Attacker has no legal moves: stalemate (draw) or, in a
-            // pathological input, already mated. Either way this is not a
-            // forced win for the attacker.
             return false;
         }
 
@@ -231,16 +164,6 @@ MateSearchResult MateSolver::solve(Board board, int mate_in_full_moves) {
     deadline_start_ = std::chrono::steady_clock::now();
 
     if (mate_in_full_moves <= 0) return result;
-
-    // Ply budget: "mate in N" means the attacking side needs N of their own
-    // moves to deliver mate, with the defender replying in between. That is
-    // N attacker moves and (N-1) defender moves interleaved:
-    //   attacker, defender, attacker, defender, ..., attacker (mating move)
-    // which totals 2*N - 1 plies. searchMate() consumes exactly one ply
-    // per move made (by either side) and requires mate to land exactly when
-    // the budget hits zero remaining moves for the side to move - in
-    // practice this works out so that the attacker's mating move is always
-    // the last ply of the budget.
     const int total_plies = 2 * mate_in_full_moves - 1;
 
     std::vector<Move> rawLine;
@@ -270,15 +193,6 @@ MateSearchResult MateSolver::solve(Board board, int mate_in_full_moves) {
 
         result.line.push_back(std::move(ply));
     }
-
-    // mate_in_moves reports N, the number of attacker moves the search was
-    // asked to prove (and did prove) is sufficient to force checkmate on
-    // every line. Individual defensive replies may allow the attacker to
-    // mate sooner (e.g. a weaker defense), but a "mate in N" puzzle is
-    // solved once we've shown N attacker moves suffice against ANY
-    // defense - the specific principal line returned is just one such
-    // witness (by construction, every other defensive try at every node
-    // was also verified to lead to mate within the same overall budget).
     result.mate_in_moves = mate_in_full_moves;
 
     return result;
