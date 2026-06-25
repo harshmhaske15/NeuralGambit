@@ -1,29 +1,3 @@
-// main.cpp
-//
-// Chess puzzle solving engine - driver program.
-//
-// Responsibilities:
-//   1. Load puzzles (FEN positions + claimed "mate in N") from the supplied
-//      JSON files.
-//   2. Supply each puzzle to solver.cpp's MateSolver, which uses minimax +
-//      alpha-beta pruning to search for a forced checkmate.
-//   3. Compare the solver's answer against the reference solution string
-//      already stored in the JSON file for that puzzle, and report whether
-//      they MATCH, MISMATCH, or whether the reference text wasn't in a
-//      directly comparable format (see compareToReference() below for why
-//      that last case exists - many reference strings use free-text
-//      shorthand, e.g. "if ... or ...", that isn't a single SAN line).
-//   4. Print the resulting mating line (or report that none was found) for
-//      every puzzle, plus a summary of how many puzzles were solved and how
-//      they compared to the reference solutions.
-//
-// Usage:
-//   ./chess_puzzle_engine [--limit N] [--time-ms MS] [--quiet]
-//                          [--file path:mateIn ...]
-//
-// With no arguments, it looks for mate_in_2.json, mate_in_3.json and
-// mate_in_4.json in the current working directory.
-
 #include "chess.hpp"
 #include "solver.hpp"
 #include "json.hpp"
@@ -42,53 +16,17 @@ using namespace chess;
 using namespace puzzle;
 
 namespace {
-
-// ---------------------------------------------------------------------------
-// Comparing the solver's answer against the JSON's reference solution text.
-// ---------------------------------------------------------------------------
-//
-// The reference strings are free-form human notes, not a single consistent
-// machine format. Across the three puzzle files they include:
-//   - plain SAN with no move numbers:        "Rxh7+ Kxh7 Rh5#"
-//   - SAN with move numbers:                 "1. Bb5+ c6 2. Qe6+ Qe7 3. Qxe7#"
-//   - Black-to-move starting with "...":      "1... Bc5+ 2. Kxc5 Qb6+ 3. Kd5 Qd6#"
-//   - alternate promotion shorthand:          "axb8/Q" instead of "axb8=Q"
-//   - branching/conditional annotations:      "f7+ if Rxc3 f8/Q# or if Rg7+ Bxg7#"
-//   - free-text connectors:                   "Rh3 w/Bf7#"   ("w/" = "with")
-//   - special-move annotations:               "g4+ hxg3 e.p. Rh1#"
-//
-// A naive exact-string comparison would report almost every puzzle as a
-// "mismatch" even when the solver's answer is a perfectly correct forced
-// mate, simply because of these formatting differences. So instead of
-// pretending we can always do an exact comparison, we:
-//
-//   1. Strip move-number prefixes ("12.", "12...") and surrounding
-//      whitespace, splitting the reference into move tokens.
-//   2. If any token contains characters that indicate non-standard/free-text
-//      notation (a '/' used for promotion instead of '=', the words "if",
-//      "or", "w/", "e.p.", or stray parentheses), we honestly report the
-//      reference as NOT DIRECTLY COMPARABLE rather than forcing a fragile
-//      match - this happens for puzzles whose reference text encodes
-//      multiple branches or shorthand we won't try to fully parse.
-//   3. Otherwise, we compare the clean reference move tokens against the
-//      solver's own SAN tokens for the line it found, move by move, up to
-//      however many tokens the reference actually provides (some references
-//      only record the key first move rather than the full line).
-
 enum class CompareOutcome {
-    MATCH,            // reference moves (as far as given) agree with the solver's line
-    MISMATCH,         // reference is clean SAN but disagrees with the solver's line
-    NOT_COMPARABLE,   // reference contains free-text/shorthand we don't try to parse
+    MATCH,            
+    MISMATCH,         
+    NOT_COMPARABLE,   
 };
 
 struct CompareResult {
     CompareOutcome outcome;
-    std::string detail;  // human-readable explanation, used for MISMATCH/NOT_COMPARABLE
+    std::string detail;  
 };
 
-// Returns true if `token` looks like a "clean" SAN move (letters, file/rank
-// digits, the usual SAN punctuation), and false if it looks like free text
-// or non-standard shorthand that we won't try to interpret.
 bool looksLikeCleanSan(const std::string& token) {
     if (token.empty()) return false;
     for (char c : token) {
@@ -96,16 +34,9 @@ bool looksLikeCleanSan(const std::string& token) {
                   c == '=' || c == 'x' || c == 'O' || c == '-';
         if (!ok) return false;
     }
-    // Reject obvious shorthand like "e.p." (handled separately) and anything
-    // that slipped through with a slash, which alphanumeric-only token text
-    // wouldn't contain anyway - this check is mostly defensive.
     return true;
 }
 
-// Splits the reference solution text into move tokens, stripping move
-// numbers ("1.", "12...") and whitespace. Returns false if the text contains
-// any token we don't consider clean SAN (free text, branching, shorthand),
-// in which case `reason` is filled in and `tokens` should not be trusted.
 bool tokenizeReference(const std::string& reference, std::vector<std::string>& tokens,
                         std::string& reason) {
     tokens.clear();
@@ -151,11 +82,7 @@ bool tokenizeReference(const std::string& reference, std::vector<std::string>& t
     return true;
 }
 
-// Compares the solver's solved line against the reference solution text for
-// one puzzle. `board` must be the ORIGINAL starting position (before any
-// moves in `line` are made), since SAN strings from solver.cpp were computed
-// relative to that position move by move; we just reuse the precomputed SAN
-// already stored on each SolutionPly rather than recomputing anything.
+// Compares the solver's solved line against the reference solution text for one puzzle.
 CompareResult compareToReference(const std::vector<SolutionPly>& solvedLine,
                                   const std::string& referenceSolution) {
     std::vector<std::string> refTokens;
@@ -165,9 +92,7 @@ CompareResult compareToReference(const std::vector<SolutionPly>& solvedLine,
         return {CompareOutcome::NOT_COMPARABLE, reason};
     }
 
-    // Compare move by move, up to the shorter of the two sequences (some
-    // references only record a prefix of the full line, e.g. just the key
-    // first move).
+    // Compare move by move, up to the shorter of the two sequences
     std::size_t n = std::min(refTokens.size(), solvedLine.size());
     for (std::size_t i = 0; i < n; ++i) {
         if (refTokens[i] != solvedLine[i].san) {
@@ -243,7 +168,7 @@ bool loadPuzzleFile(const std::string& path, nlohmann::json& out) {
     return true;
 }
 
-}  // namespace
+} 
 
 int main(int argc, char** argv) {
     Options opts;
